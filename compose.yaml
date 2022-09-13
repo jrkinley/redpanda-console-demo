@@ -1,0 +1,107 @@
+services:
+  redpanda1:
+    image: docker.redpanda.com/vectorized/redpanda:v22.2.2
+    container_name: redpanda1
+    command:
+      - redpanda
+      - start    
+      - --overprovisioned
+      - --node-id
+      - '1'
+      - --kafka-addr
+      - PLAINTEXT://0.0.0.0:9092,OUTSIDE://0.0.0.0:19092
+      - --advertise-kafka-addr
+      - PLAINTEXT://redpanda1:9092,OUTSIDE://localhost:19092    
+      - --rpc-addr 
+      - 0.0.0.0:33145
+      - --advertise-rpc-addr
+      - redpanda1:33145
+    ports:    
+      - 19092:19092
+      - 18081:8081
+  redpanda2:
+    image: docker.redpanda.com/vectorized/redpanda:v22.2.2
+    container_name: redpanda2
+    command:
+      - redpanda
+      - start
+      - --overprovisioned
+      - --node-id
+      - '2'      
+      - --kafka-addr
+      - PLAINTEXT://0.0.0.0:9092,OUTSIDE://0.0.0.0:29092
+      - --advertise-kafka-addr
+      - PLAINTEXT://redpanda2:9092,OUTSIDE://localhost:29092
+      - --rpc-addr
+      - 0.0.0.0:33146
+      - --advertise-rpc-addr
+      - redpanda2:33146
+      - --seeds
+      - redpanda1:33145
+    ports:
+      - 29092:29092
+      - 28081:8081
+    depends_on:
+      - redpanda1
+  redpanda3:
+    image: docker.redpanda.com/vectorized/redpanda:v22.2.2
+    container_name: redpanda3
+    command:
+      - redpanda
+      - start
+      - --overprovisioned
+      - --node-id
+      - '3'
+      - --kafka-addr
+      - PLAINTEXT://0.0.0.0:9092,OUTSIDE://0.0.0.0:39092
+      - --advertise-kafka-addr
+      - PLAINTEXT://redpanda3:9092,OUTSIDE://localhost:39092
+      - --rpc-addr
+      - 0.0.0.0:33147
+      - --advertise-rpc-addr
+      - redpanda3:33147
+      - --seeds
+      - redpanda1:33145
+    ports:
+      - 39092:39092
+      - 38081:8081
+    depends_on:
+      - redpanda1
+      - redpanda2
+  console:
+    image: docker.redpanda.com/vectorized/console:v2.0.2
+    restart: on-failure
+    entrypoint: /bin/sh
+    command: -c "echo \"$$CONSOLE_CONFIG_FILE\" > /tmp/config.yml; /app/console"
+    environment:
+      CONFIG_FILEPATH: /tmp/config.yml
+      CONSOLE_CONFIG_FILE: |
+        redpanda:
+          adminApi:
+            enabled: true
+            urls:
+              - "http://redpanda1:9644"
+              - "http://redpanda2:9644"
+              - "http://redpanda3:9644"
+        kafka:
+          brokers:
+            - "redpanda1:9092"
+            - "redpanda2:9092"
+            - "redpanda3:9092"
+          schemaRegistry:
+            enabled: true
+            urls:
+              - "http://redpanda1:8081"
+              - "http://redpanda2:8081"
+              - "http://redpanda3:8081"
+          protobuf:
+            enabled: true
+            schemaRegistry:
+              enabled: true
+              refreshInterval: 1m
+    ports:
+      - "8080:8080"
+    depends_on:
+      - redpanda1
+      - redpanda2
+      - redpanda3  

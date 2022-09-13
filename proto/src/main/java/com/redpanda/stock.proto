@@ -1,0 +1,11 @@
+syntax = "proto3";
+package nasdaq.historical.v1;
+
+message NasdaqHistorical {
+    string date   = 1;
+    string last   = 2;
+    float  volume = 3;
+    string open   = 4;
+    string high   = 5;
+    string low    = 6;
+}
