@@ -1,0 +1,50 @@
+{
+  "type" : "record",
+  "name" : "vehiclePosition",
+  "fields" : [{
+      "name" : "desi",
+      "type" : "string",
+      "doc"  : "Route number visible to passengers."
+    }, {
+      "name" : "oper",
+      "type" : "int",
+      "doc"  : "Unique ID of the operator running the trip."
+    }, {
+      "name" : "veh",
+      "type" : "int",
+      "doc"  : "Vehicle number that can be seen painted on the side of the vehicle."
+    }, {
+      "name" : "tst",
+      "type" : "string",
+      "doc"  : "UTC timestamp with millisecond precision."
+    }, {
+      "name" : "spd",
+      "type" : "float",
+      "doc"  : "Speed of the vehicle, in meters per second (m/s)."
+    }, {
+      "name" : "lat",
+      "type" : "float",
+      "doc"  : "WGS 84 latitude in degrees."
+    }, {
+      "name" : "long",
+      "type" : "float",
+      "doc"  : "WGS 84 longitude in degrees."
+    }, {
+      "name" : "dl",
+      "type" : "int",
+      "doc"  : "Offset from the scheduled timetable in seconds."
+    }, {
+      "name" : "start",
+      "type" : "string",
+      "doc"  : "Scheduled start time of the trip."
+    }, {
+      "name" : "stop",
+      "type" : "string",
+      "doc"  : "ID of the stop related to the event."
+    }, {
+      "name" : "route",
+      "type" : "string",
+      "doc"  : "ID of the route the vehicle is currently running on."
+    }
+  ]
+}

@@ -1,5 +1,10 @@
 .vscode/
 
+# Java
 *.class
 *.jar
 target/
+
+# Javascript
+node_modules/
+package-lock.json
