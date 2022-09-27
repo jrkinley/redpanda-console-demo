@@ -68,7 +68,7 @@ return 100/open*close > 110
 
 ## Produce Avro data (Javascript)
 
-The Javascript example connects to [Digitransit High-Frequency Positioning (HFP) API](https://digitransit.fi/en/developers/apis/4-realtime-api/vehicle-positions/) and subscribes to the Helsinki public transport vehicle movements firehose. Buses, trains, and trams in the Helsinki area publish their status once per second in MQTT format, with the message payload provided as UTF-8 encoded JSON strings.
+The Javascript example connects to the [Digitransit High-Frequency Positioning (HFP) API](https://digitransit.fi/en/developers/apis/4-realtime-api/vehicle-positions/) and subscribes to the Helsinki public transport vehicle movements firehose. Buses, trains, and trams in the Helsinki area publish their status once per second in MQTT format, with the message payload provided as UTF-8 encoded JSON strings.
 
 The [hfp-producer.js](./js/hfp-producer.js) script subscribes to the HFP API for vehicle positions (`/hfp/v2/journey/ongoing/vp/#`) and transforms all MQTT messages to Avro (with schema registry encoding) before forwarding to a Redpanda topic. The [Avro schema](./js/vp.avsc) is registered in the Redpanda schema registry.
 
