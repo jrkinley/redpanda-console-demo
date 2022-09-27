@@ -49,7 +49,7 @@ const schemaRegistry = args.r || args.registry || "http://localhost:8081"
 const redpanda = new Kafka({"brokers": brokers})
 const producer = redpanda.producer()
 await producer.connect()
-console.log(chalk.green(`Connected to Redpanda at: ${brokers}`))
+console.log(chalk.green("Connected to Redpanda at: ") + brokers)
 
 const admin = redpanda.admin()
 await admin.connect()
@@ -79,7 +79,7 @@ if (response.ok) {
 const schema = fs.readFileSync("vp.avsc", "utf-8")
 const type = avro.parse(schema)
 const post = `${schemaRegistry}/subjects/hfp-vp-value/versions`
-console.log(`POST: ${post}`);
+console.log(chalk.bgGrey("POST: " + post))
 var response = await fetch(post, {
     method: "POST",
     body: JSON.stringify({
@@ -89,12 +89,12 @@ var response = await fetch(post, {
   }
 )
 if (!response.ok) {
-  console.error(chalk.red(`Error registering schema: ${await response.text()}`));
+  console.error(chalk.red("Error registering schema: ") + await response.text())
   process.exit(1);
 }
 var response = await response.json()
 const schemaId = response["id"]
-console.log(chalk.green(`Registered schema: ${schemaId}`))
+console.log(chalk.green("Registered schema: " + schemaId))
 
 // Connect to the HFP MQTT API and subscibe to vehicle position (vp) events
 const hslHost = "mqtt.hsl.fi"
@@ -109,7 +109,7 @@ const client  = mqtt.connect(mqttOptions)
 
 client.subscribe(hslTopic)
 client.on("connect", function () {
-  console.log(`Connected to mqtts://${hslHost}:${hslPort}${hslTopic}`)
+  console.log(chalk.bgGrey(`Connected to: mqtts://${hslHost}:${hslPort}${hslTopic}`))
 })
 
 const defaultOffset = 0
@@ -147,9 +147,9 @@ client.on("message", async function (topic, message) {
       topic: topicName,
       messages: [{ value: payload }],
     })
-    console.log(`${chalk.green("Produced")}: ${JSON.stringify(meta)}`)
+    console.log(chalk.green("Produced: ") + JSON.stringify(meta))
   } catch (e) {
-    console.log(`${chalk.red("Error producing message")}: ${msg}`)
+    console.log(chalk.red("Error producing message: ") + msg)
     console.error(e)
     process.exit(1)
   }
@@ -158,12 +158,12 @@ client.on("message", async function (topic, message) {
 /* Disconnect on CTRL+C */
 process.on("SIGINT", async () => {
   try {
-    console.log("Disconnecting...")
+    console.log(chalk.bgGrey("Disconnecting..."))
     client.end()
-    await producer.disconnect();
-    process.exit(0);
+    await producer.disconnect()
+    process.exit(0)
   } catch (e) {
     console.error(e.toString())
-    process.exit(1);
+    process.exit(1)
   }
-});
+})

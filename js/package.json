@@ -2,7 +2,7 @@
   "type": "module",
   "name": "com.redpanda",
   "version": "1.0.0",
-  "main": "digitransit-hfp-producer.js",
+  "main": "hfp-producer.js",
   "dependencies": {
     "avro-js": "^1.11.1",
     "chalk": "^5.0.1",

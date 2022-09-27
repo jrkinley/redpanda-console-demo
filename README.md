@@ -18,7 +18,7 @@ docker-compose up -d
 
 Once the containers have started, Redpanda Console will be available at http://localhost:8080.
 
-## Produce JSON data
+## Produce JSON data (Go)
 
 The [data](./data/) folder contains historical stock data for four symbols. The data can be downloaded from the [Nasdaq](https://www.nasdaq.com/market-activity/stocks/coke/historical) website in CSV format.
 
@@ -31,21 +31,23 @@ go run main.go -brokers localhost:19092,localhost:29092,localhost:39092
 
 ![Redpanda Console Topic View](./topic.png)
 
-## Produce Protobuf data
+## Produce Protobuf data (Java)
 
 The [Protobuf](https://developers.google.com/protocol-buffers/) example uses the same historical stock data as above, but uses [Confluent's Protobuf Schema Serializer and Deserializer](https://docs.confluent.io/platform/current/schema-registry/serdes-develop/serdes-protobuf.html) to send Protobuf messages to a Redpanda topic named `nasdaq_historical_proto`. The Java-based library registers the Protobuf schema in the Schema Registry, which is subsequently used by Redpanda Console to [deserialize messages](https://docs.redpanda.com/docs/console/features/record-deserialization/) into JSON for [filtering](https://docs.redpanda.com/docs/console/features/programmable-push-filters/).
 
 ```shell
-cd proto
+cd java
 mvn clean compile assembly:single
 java -jar target/protobuf-example-1.0.0-jar-with-dependencies.jar
 ```
 
 ![Redpanda Console Schema Registry](./schema.png)
 
-## Push Filters
+## Push Filters for Nasdaq data
 
-Use Redpanda Console's [push filters](https://docs.redpanda.com/docs/console/features/programmable-push-filters/) to search for specific messages in the `nasdaq_historical` or `nasdaq_historical_proto` topics. Note that you might have to provide a custom offset to see the results.
+Use Redpanda Console's [push filters](https://docs.redpanda.com/docs/console/features/programmable-push-filters/) to search for specific messages in the `nasdaq_historical` or `nasdaq_historical_proto` topics.
+
+**Note** that you might have to provide a custom offset to see the results (e.g. start offset: `0`, max results: `50`)
 
 1. Filter the topic by the key `NVDA` and the record year `2022`:
 
@@ -63,3 +65,40 @@ return 100/open*close > 110
 ```
 
 ![Redpanda Console Push Filters](./filter.png)
+
+## Produce Avro data (Javascript)
+
+The Javascript example connects to [Digitransit High-Frequency Positioning (HFP) API](https://digitransit.fi/en/developers/apis/4-realtime-api/vehicle-positions/) and subscribes to the Helsinki public transport vehicle movements firehose. Buses, trains, and trams in the Helsinki area publish their status once per second in MQTT format, with the message payload provided as UTF-8 encoded JSON strings.
+
+The [hfp-producer.js](./js/hfp-producer.js) script subscribes to the HFP API for vehicle positions (`/hfp/v2/journey/ongoing/vp/#`) and transforms all MQTT messages to Avro (with schema registry encoding) before forwarding to a Redpanda topic. The [Avro schema](./js/vp.avsc) is registered in the Redpanda schema registry.
+
+```shell
+cd js
+node hfp-producer.js -b localhost:19092 -r http://localhost:18081
+```
+
+The [hfp-consumer.js](./js/hfp-consumer.js) script subscribes to the Redpanda topic and consumes the Avro messages. It uses the Avro schema registry encoding to retrieve the associated Avro schema from the Redpanda schema registry and uses it to deserialise the messages, printing them to the console in JSON string format.
+
+```shell
+cd js
+node hfp-consumer.js -b localhost:19092 -r http://localhost:18081
+```
+
+## Push Filters for HFP API data
+
+Use Redpanda Console's [push filters](https://docs.redpanda.com/docs/console/features/programmable-push-filters/) to search for specific messages in the `digitransit-hfp` topic.
+
+1. Apply a filter on the `dl` field to determine which vehicles are behind schedule (i.e. running late for their next stop):
+
+```javascript
+return value.dl < 0;
+```
+
+2. Include only the records from a given public transport operator. See the Digitransit documentation for a [full list of operators](https://digitransit.fi/en/developers/apis/4-realtime-api/vehicle-positions/#operators):
+
+```javascript
+// Nobina Finland Oy
+return value.oper == 22;
+```
+
+![Redpanda Console Avro](./avro.png)
