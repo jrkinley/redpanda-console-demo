@@ -17,6 +17,7 @@ services:
     ports:    
       - 19092:19092 # Kafka port
       - 18081:8081  # Schema registry port
+      - 19644:9644  # Admin and metrics
   redpanda2:
     image: docker.redpanda.com/vectorized/redpanda:v22.2.2
     container_name: redpanda2
@@ -36,6 +37,7 @@ services:
     ports:
       - 29092:29092
       - 28081:8081
+      - 29644:9644
     depends_on:
       - redpanda1
   redpanda3:
@@ -57,11 +59,39 @@ services:
     ports:
       - 39092:39092
       - 38081:8081
+      - 39644:9644
     depends_on:
       - redpanda1
       - redpanda2
+  connect:
+    image: debezium/connect
+    container_name: debezium-connect
+    depends_on:
+      - redpanda1
+      - redpanda2
+      - redpanda3
+    environment:
+      BOOTSTRAP_SERVERS: "redpanda1:9092,redpanda2:9092,redpanda3:9092"
+      GROUP_ID: "1"
+      CONFIG_STORAGE_TOPIC: "inventory.configs"
+      OFFSET_STORAGE_TOPIC: "inventory.offset"
+      STATUS_STORAGE_TOPIC: "inventory.status"
+    ports:
+      - 8083:8083
+  mysql:
+    image: debezium/example-mysql
+    container_name: debezium-mysql
+    depends_on:
+      - connect
+    ports:
+      - 3306:3306
+    environment:
+      MYSQL_ROOT_PASSWORD: debezium
+      MYSQL_USER: mysqluser
+      MYSQL_PASSWORD: mysqlpw  
   console:
     image: docker.redpanda.com/vectorized/console:v2.0.2
+    container_name: redpanda-console
     restart: on-failure
     entrypoint: /bin/sh
     command: -c "echo \"$$CONSOLE_CONFIG_FILE\" > /tmp/config.yml; /app/console"
@@ -91,9 +121,19 @@ services:
             schemaRegistry:
               enabled: true
               refreshInterval: 1m
+        connect:
+          enabled: true
+          clusters:
+            - name: kafka-connect
+              url: http://connect:8083
+          connectTimeout: 15s
+          readTimeout: 60s
+          requestTimeout: 6s
     ports:
-      - "8080:8080"
+      - 8080:8080
     depends_on:
       - redpanda1
       - redpanda2
-      - redpanda3  
+      - redpanda3
+      - connect
+      - mysql
