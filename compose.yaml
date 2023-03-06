@@ -1,32 +1,32 @@
 services:
   redpanda1:
-    image: docker.redpanda.com/vectorized/redpanda:v22.2.2
+    image: docker.redpanda.com/redpandadata/redpanda:v23.1.1
     container_name: redpanda1
     command:
       - redpanda
       - start
-      - --overprovisioned # Configure Redpanda to play nicely on a shared environment
-      - --smp 1           # Limit the Redpanda process to using a single core
       - --node-id 1
+      - --overprovisioned
+      - --smp 1
       - --kafka-addr
-      - PLAINTEXT://0.0.0.0:9092,OUTSIDE://0.0.0.0:19092     # Internal Kafka addresses
+      - PLAINTEXT://0.0.0.0:9092,OUTSIDE://0.0.0.0:19092
       - --advertise-kafka-addr
-      - PLAINTEXT://redpanda1:9092,OUTSIDE://localhost:19092 # Advertised Kafka addresses
-      - --rpc-addr 0.0.0.0:33145                             # Internal RPC address
-      - --advertise-rpc-addr redpanda1:33145                 # Advertised RPC address
-    ports:    
-      - 19092:19092 # Kafka port
+      - PLAINTEXT://redpanda1:9092,OUTSIDE://localhost:19092
+      - --rpc-addr 0.0.0.0:33145
+      - --advertise-rpc-addr redpanda1:33145
+    ports:
+      - 19092:19092 # Kafka API port
       - 18081:8081  # Schema registry port
       - 19644:9644  # Admin and metrics
   redpanda2:
-    image: docker.redpanda.com/vectorized/redpanda:v22.2.2
+    image: docker.redpanda.com/redpandadata/redpanda:v23.1.1
     container_name: redpanda2
     command:
       - redpanda
       - start
+      - --node-id 2
       - --overprovisioned
       - --smp 1
-      - --node-id 2
       - --kafka-addr
       - PLAINTEXT://0.0.0.0:9092,OUTSIDE://0.0.0.0:29092
       - --advertise-kafka-addr
@@ -41,14 +41,14 @@ services:
     depends_on:
       - redpanda1
   redpanda3:
-    image: docker.redpanda.com/vectorized/redpanda:v22.2.2
+    image: docker.redpanda.com/redpandadata/redpanda:v23.1.1
     container_name: redpanda3
     command:
       - redpanda
       - start
+      - --node-id 3
       - --overprovisioned
       - --smp 1
-      - --node-id 3
       - --kafka-addr
       - PLAINTEXT://0.0.0.0:9092,OUTSIDE://0.0.0.0:39092
       - --advertise-kafka-addr
@@ -64,33 +64,38 @@ services:
       - redpanda1
       - redpanda2
   connect:
-    image: debezium/connect
-    container_name: debezium-connect
+    image: docker.redpanda.com/redpandadata/connectors:1.0.0-dev-6e02c2a
+    hostname: connect
+    container_name: connect
+    environment:
+      CONNECT_CONFIGURATION: |
+        key.converter=org.apache.kafka.connect.converters.ByteArrayConverter
+        value.converter=org.apache.kafka.connect.converters.ByteArrayConverter
+        group.id=redpanda-connect
+        offset.storage.topic=_connectors_offsets
+        config.storage.topic=_connectors_configs
+        status.storage.topic=_connectors_status
+        config.storage.replication.factor=-1
+        offset.storage.replication.factor=-1
+        status.storage.replication.factor=-1
+        offset.flush.interval.ms=1000
+        producer.linger.ms=1
+        producer.batch.size=131072
+      CONNECT_BOOTSTRAP_SERVERS: redpanda1:9092,redpanda2:9092,redpanda3:9092
+      CONNECT_GC_LOG_ENABLED: "false"
+      CONNECT_HEAP_OPTS: -Xms256M -Xmx256M
+      CONNECT_METRICS_ENABLED: "true"
+      CONNECT_TLS_ENABLED: "false"
+      CONNECT_PLUGIN_PATH: "/opt/kafka/connect-plugins"
+    ports:
+      - 8083:8083
+      - 9404:9404
     depends_on:
       - redpanda1
       - redpanda2
       - redpanda3
-    environment:
-      BOOTSTRAP_SERVERS: "redpanda1:9092,redpanda2:9092,redpanda3:9092"
-      GROUP_ID: "1"
-      CONFIG_STORAGE_TOPIC: "inventory.configs"
-      OFFSET_STORAGE_TOPIC: "inventory.offset"
-      STATUS_STORAGE_TOPIC: "inventory.status"
-    ports:
-      - 8083:8083
-  mysql:
-    image: debezium/example-mysql
-    container_name: debezium-mysql
-    depends_on:
-      - connect
-    ports:
-      - 3306:3306
-    environment:
-      MYSQL_ROOT_PASSWORD: debezium
-      MYSQL_USER: mysqluser
-      MYSQL_PASSWORD: mysqlpw  
   console:
-    image: docker.redpanda.com/vectorized/console:v2.0.2
+    image: docker.redpanda.com/redpandadata/console:v2.1.1
     container_name: redpanda-console
     restart: on-failure
     entrypoint: /bin/sh
@@ -124,7 +129,7 @@ services:
         connect:
           enabled: true
           clusters:
-            - name: kafka-connect
+            - name: connect
               url: http://connect:8083
           connectTimeout: 15s
           readTimeout: 60s
@@ -137,3 +142,12 @@ services:
       - redpanda3
       - connect
       - mysql
+  mysql:
+    image: debezium/example-mysql
+    container_name: debezium-mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: debezium
+      MYSQL_USER: mysqluser
+      MYSQL_PASSWORD: mysqlpw
+    ports:
+      - 3306:3306
