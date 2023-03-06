@@ -13,7 +13,7 @@ docker-compose up -d
  ⠿ Container redpanda1                   Started
  ⠿ Container redpanda2                   Started
  ⠿ Container redpanda3                   Started
- ⠿ Container debezium-connect            Started
+ ⠿ Container connect                     Started
  ⠿ Container debezium-mysql              Started
  ⠿ Container redpanda-console            Started
 ```
@@ -67,43 +67,6 @@ return 100/open*close > 110
 ```
 
 ![Redpanda Console Push Filters](./filter.png)
-
-## Produce Avro data (Javascript)
-
-The Javascript example connects to the [Digitransit High-Frequency Positioning (HFP) API](https://digitransit.fi/en/developers/apis/4-realtime-api/vehicle-positions/) and subscribes to the Helsinki public transport vehicle movements firehose. Buses, trains, and trams in the Helsinki area publish their status once per second in MQTT format, with the message payload provided as UTF-8 encoded JSON strings.
-
-The [hfp-producer.js](./js/hfp-producer.js) script subscribes to the HFP API for vehicle positions (`/hfp/v2/journey/ongoing/vp/#`) and transforms all MQTT messages to Avro (with schema registry encoding) before forwarding to a Redpanda topic. The [Avro schema](./js/vp.avsc) is registered in the Redpanda schema registry.
-
-```shell
-cd js
-node hfp-producer.js -b localhost:19092 -r http://localhost:18081
-```
-
-The [hfp-consumer.js](./js/hfp-consumer.js) script subscribes to the Redpanda topic and consumes the Avro messages. It uses the Avro schema registry encoding to retrieve the associated Avro schema from the Redpanda schema registry and uses it to deserialise the messages, printing them to the console in JSON string format.
-
-```shell
-cd js
-node hfp-consumer.js -b localhost:19092 -r http://localhost:18081
-```
-
-## Push Filters for HFP API data
-
-Use Redpanda Console's [push filters](https://docs.redpanda.com/docs/console/features/programmable-push-filters/) to search for specific messages in the `digitransit-hfp` topic.
-
-1. Apply a filter on the `dl` field to determine which vehicles are behind schedule (i.e. running late for their next stop):
-
-```javascript
-return value.dl < 0;
-```
-
-2. Include only the records from a given public transport operator. See the Digitransit documentation for a [full list of operators](https://digitransit.fi/en/developers/apis/4-realtime-api/vehicle-positions/#operators):
-
-```javascript
-// Nobina Finland Oy
-return value.oper == 22;
-```
-
-![Redpanda Console Avro](./avro.png)
 
 ## Debezium + MySQL
 
