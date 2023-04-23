@@ -14,6 +14,8 @@ services:
       - PLAINTEXT://redpanda1:9092,OUTSIDE://localhost:19092
       - --rpc-addr 0.0.0.0:33145
       - --advertise-rpc-addr redpanda1:33145
+      - --set enable_rack_awareness=true
+      - --set redpanda.rack=A
     ports:
       - 19092:19092 # Kafka API port
       - 18081:8081  # Schema registry port
@@ -34,6 +36,8 @@ services:
       - --rpc-addr 0.0.0.0:33146
       - --advertise-rpc-addr redpanda2:33146
       - --seeds redpanda1:33145
+      - --set enable_rack_awareness=true
+      - --set redpanda.rack=B
     ports:
       - 29092:29092
       - 28081:8081
@@ -56,6 +60,8 @@ services:
       - --rpc-addr 0.0.0.0:33147
       - --advertise-rpc-addr redpanda3:33147
       - --seeds redpanda1:33145
+      - --set enable_rack_awareness=true
+      - --set redpanda.rack=C
     ports:
       - 39092:39092
       - 38081:8081
@@ -64,7 +70,7 @@ services:
       - redpanda1
       - redpanda2
   connect:
-    image: docker.redpanda.com/redpandadata/connectors:1.0.0-dev-6e02c2a
+    image: docker.redpanda.com/redpandadata/connectors:1.0.0-dev-0c89fdf
     hostname: connect
     container_name: connect
     environment:
@@ -95,7 +101,7 @@ services:
       - redpanda2
       - redpanda3
   console:
-    image: docker.redpanda.com/redpandadata/console:v2.1.1
+    image: docker.redpanda.com/redpandadata/console:v2.2.2
     container_name: redpanda-console
     restart: on-failure
     entrypoint: /bin/sh

@@ -54,8 +54,7 @@ Use Redpanda Console's [push filters](https://docs.redpanda.com/docs/console/fea
 1. Filter the topic by the key `NVDA`:
 
 ```javascript
-var parts = value.Date.split("/");
-return (key == "NVDA")
+return (key == "NVDA");
 ```
 
 2. Include only the records that have had a 10% increase in value:
