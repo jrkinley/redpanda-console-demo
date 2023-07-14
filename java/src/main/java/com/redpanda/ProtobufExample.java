@@ -45,10 +45,10 @@ public class ProtobufExample {
 
     public static void main(String[] args) throws InterruptedException {
         Options options = new Options();
-        options.addOption(new Option("file", "Path to .csv file containing Nasdaq historical data"));
-        options.addOption(new Option("brokers", "Kafka API bootstrap servers"));
-        options.addOption(new Option("schema", "Schema Registry address"));
-        options.addOption(new Option("topic", "Produce events to this topic"));
+        options.addOption(new Option("f", "file", true, "Path to .csv file containing Nasdaq historical data"));
+        options.addOption(new Option("b", "brokers", true, "Kafka API bootstrap servers"));
+        options.addOption(new Option("r", "registry", true, "Schema Registry address"));
+        options.addOption(new Option("t", "topic", true, "Produce events to this topic"));
 
         CommandLineParser parser = new DefaultParser();
         HelpFormatter formatter = new HelpFormatter();
@@ -60,13 +60,13 @@ public class ProtobufExample {
             formatter.printHelp("produce-proto", options);
             System.exit(1);
         }
-       
+
         final String topic = cmd.getOptionValue("topic", "nasdaq_historical_proto");
         final String inputFile = cmd.getOptionValue("file", "HistoricalData_NVDA_5Y.csv");
-        
+
         Properties props = new Properties();
-        props.put("bootstrap.servers", cmd.getOptionValue("brokers", "localhost:19092"));
-        props.put("schema.registry.url", cmd.getOptionValue("schema", "http://localhost:18081"));
+        props.put("bootstrap.servers", cmd.getOptionValue("brokers", "localhost:9092"));
+        props.put("schema.registry.url", cmd.getOptionValue("registry", "http://localhost:8081"));
         props.put("key.serializer", StringSerializer.class.getName());
         props.put("value.serializer", KafkaProtobufSerializer.class.getName());
         props.put("key.deserializer", StringDeserializer.class.getName());
@@ -87,7 +87,7 @@ public class ProtobufExample {
 
         Runnable write = () -> {
             // Compile .proto to generate classes:
-            // protoc -I=src/main/java/ --java_out=src/main/java/ src/main/java/com/redpanda/stock.proto
+            // protoc -I=src/main/java/ --java_out=src/main/java/ ../data/stock.proto
             final KafkaProducer<String, NasdaqHistorical> producer = new KafkaProducer<String, NasdaqHistorical>(props);
             String symbol = getSymbol(inputFile);
 

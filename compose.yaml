@@ -1,13 +1,12 @@
 services:
   redpanda1:
-    image: docker.redpanda.com/redpandadata/redpanda:v23.1.1
+    image: docker.redpanda.com/redpandadata/redpanda:v23.1.12
     container_name: redpanda1
     command:
       - redpanda
       - start
       - --node-id 1
       - --overprovisioned
-      - --smp 1
       - --kafka-addr
       - PLAINTEXT://0.0.0.0:9092,OUTSIDE://0.0.0.0:19092
       - --advertise-kafka-addr
@@ -15,20 +14,19 @@ services:
       - --rpc-addr 0.0.0.0:33145
       - --advertise-rpc-addr redpanda1:33145
       - --set enable_rack_awareness=true
-      - --set redpanda.rack=A
+      - --set redpanda.rack=zone1
     ports:
       - 19092:19092 # Kafka API port
       - 18081:8081  # Schema registry port
       - 19644:9644  # Admin and metrics
   redpanda2:
-    image: docker.redpanda.com/redpandadata/redpanda:v23.1.1
+    image: docker.redpanda.com/redpandadata/redpanda:v23.1.12
     container_name: redpanda2
     command:
       - redpanda
       - start
       - --node-id 2
       - --overprovisioned
-      - --smp 1
       - --kafka-addr
       - PLAINTEXT://0.0.0.0:9092,OUTSIDE://0.0.0.0:29092
       - --advertise-kafka-addr
@@ -37,7 +35,7 @@ services:
       - --advertise-rpc-addr redpanda2:33146
       - --seeds redpanda1:33145
       - --set enable_rack_awareness=true
-      - --set redpanda.rack=B
+      - --set redpanda.rack=zone2
     ports:
       - 29092:29092
       - 28081:8081
@@ -45,14 +43,13 @@ services:
     depends_on:
       - redpanda1
   redpanda3:
-    image: docker.redpanda.com/redpandadata/redpanda:v23.1.1
+    image: docker.redpanda.com/redpandadata/redpanda:v23.1.12
     container_name: redpanda3
     command:
       - redpanda
       - start
       - --node-id 3
       - --overprovisioned
-      - --smp 1
       - --kafka-addr
       - PLAINTEXT://0.0.0.0:9092,OUTSIDE://0.0.0.0:39092
       - --advertise-kafka-addr
@@ -61,7 +58,7 @@ services:
       - --advertise-rpc-addr redpanda3:33147
       - --seeds redpanda1:33145
       - --set enable_rack_awareness=true
-      - --set redpanda.rack=C
+      - --set redpanda.rack=zone3
     ports:
       - 39092:39092
       - 38081:8081
@@ -70,7 +67,7 @@ services:
       - redpanda1
       - redpanda2
   connect:
-    image: docker.redpanda.com/redpandadata/connectors:1.0.0-dev-0c89fdf
+    image: docker.redpanda.com/redpandadata/connectors:v1.0.1
     hostname: connect
     container_name: connect
     environment:
@@ -101,7 +98,7 @@ services:
       - redpanda2
       - redpanda3
   console:
-    image: docker.redpanda.com/redpandadata/console:v2.2.2
+    image: docker.redpanda.com/redpandadata/console:v2.2.4
     container_name: redpanda-console
     restart: on-failure
     entrypoint: /bin/sh
@@ -147,13 +144,3 @@ services:
       - redpanda2
       - redpanda3
       - connect
-      - mysql
-  mysql:
-    image: debezium/example-mysql
-    container_name: debezium-mysql
-    environment:
-      MYSQL_ROOT_PASSWORD: debezium
-      MYSQL_USER: mysqluser
-      MYSQL_PASSWORD: mysqlpw
-    ports:
-      - 3306:3306
