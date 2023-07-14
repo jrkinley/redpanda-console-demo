@@ -1,5 +1,6 @@
 syntax = "proto3";
 package nasdaq.historical.v1;
+option go_package = "./stock";
 
 message NasdaqHistorical {
     string date   = 1;

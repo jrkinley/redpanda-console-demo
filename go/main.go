@@ -5,7 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"flag"
-	"io/ioutil"
+	"fmt"
 	"log"
 	"os"
 	"path/filepath"
@@ -13,17 +13,33 @@ import (
 	"sync"
 	"time"
 
+	"github.com/hamba/avro"
 	"github.com/twmb/franz-go/pkg/kadm"
 	"github.com/twmb/franz-go/pkg/kgo"
+	"github.com/twmb/franz-go/pkg/sr"
+)
+
+var (
+	dir      = flag.String("dir", "../data", "Directory containing .csv files")
+	brokers  = flag.String("brokers", "localhost:9092", "Kafka API bootstrap servers")
+	registry = flag.String("registry", "http://localhost:8081", "Schema Registry URL")
+	topic    = flag.String("topic", "nasdaq_historical", "Produce events to this topic")
+	delay    = flag.Int("delay", 100, "Milliseconds delay in between producing events")
+	encoding = flag.String("encoding", "json", "Encode the values as 'avro'|'json'")
+)
+
+var (
+	schema sr.SubjectSchema
+	serde  sr.Serde
 )
 
 type NasdaqHistorical struct {
-	Date   string `csv:"Date"`
-	Last   string `csv:"Close/Last"`
-	Volume string `csv:"Volume"`
-	Open   string `csv:"Open"`
-	High   string `csv:"High"`
-	Low    string `csv:"Low"`
+	Date   string `avro:"date"`
+	Last   string `avro:"last"`
+	Volume string `avro:"volume"`
+	Open   string `avro:"open"`
+	High   string `avro:"high"`
+	Low    string `avro:"low"`
 }
 
 func (n *NasdaqHistorical) Parse(r string) {
@@ -34,6 +50,11 @@ func (n *NasdaqHistorical) Parse(r string) {
 	n.Open = p[3]
 	n.High = p[4]
 	n.Low = p[5]
+}
+
+func (n *NasdaqHistorical) String() string {
+	data, _ := json.Marshal(n)
+	return fmt.Sprintf("%s\n", data)
 }
 
 func createTopic(admin *kadm.Client, topic string) {
@@ -47,7 +68,7 @@ func createTopic(admin *kadm.Client, topic string) {
 	}
 }
 
-func write(client *kgo.Client, topic *string, delay *int, path *string, wg *sync.WaitGroup) {
+func write(client *kgo.Client, path *string, wg *sync.WaitGroup) {
 	defer wg.Done()
 
 	log.Printf("Reading .csv file: %s", *path)
@@ -62,19 +83,24 @@ func write(client *kgo.Client, topic *string, delay *int, path *string, wg *sync
 	scanner := bufio.NewScanner(file)
 	scanner.Scan() // Skip the header row
 	for scanner.Scan() {
-		day := NasdaqHistorical{}
+		var day = NasdaqHistorical{}
 		day.Parse(scanner.Text())
-		dayJson, _ := json.Marshal(day)
-
+		var payload []byte
+		if schema.Type == sr.TypeAvro {
+			payload = serde.MustEncode(day)
+		} else {
+			payload, _ = json.Marshal(day)
+		}
 		r := &kgo.Record{
 			Topic: *topic,
 			Key:   []byte(ticker),
-			Value: []byte(string(dayJson)),
+			Value: payload,
 		}
 		if err := client.ProduceSync(context.Background(), r).FirstErr(); err != nil {
 			log.Printf("Synchronous produce error: %s", err.Error())
 		} else {
-			log.Printf("Produced: [Topic: %s \tKey: %s \tValue: %s]", r.Topic, r.Key, r.Value)
+			log.Printf("[Produced] Topic: %s, Offset: %d, Key: %s, Value: %s",
+				r.Topic, r.Offset, r.Key, r.Value)
 		}
 		time.Sleep(time.Duration(*delay) * time.Millisecond)
 	}
@@ -84,7 +110,7 @@ func write(client *kgo.Client, topic *string, delay *int, path *string, wg *sync
 	}
 }
 
-func read(client *kgo.Client, topic *string, wg *sync.WaitGroup) {
+func read(client *kgo.Client, wg *sync.WaitGroup) {
 	defer wg.Done()
 	ctx := context.Background()
 
@@ -98,8 +124,17 @@ func read(client *kgo.Client, topic *string, wg *sync.WaitGroup) {
 		iter := fetches.RecordIter()
 		for !iter.Done() {
 			record := iter.Next()
-			log.Printf("Consumed: [Topic: %s \tOffset: %d \tKey: %s \tValue: %s]",
-				record.Topic, record.Offset, record.Key, record.Value)
+			var nh NasdaqHistorical
+			if schema.Type == sr.TypeAvro {
+				err := serde.Decode(record.Value, &nh)
+				if err != nil {
+					log.Fatalf("Error decoding Avro value: %v", err)
+				}
+			} else {
+				json.Unmarshal(record.Value, &nh)
+			}
+			log.Printf("[Consumed] Topic: %s, Offset: %d, Key: %s, Value: %s",
+				record.Topic, record.Offset, record.Key, nh.String())
 		}
 		// Simulate consumer lag
 		time.Sleep(time.Duration(2) * time.Second)
@@ -111,12 +146,56 @@ func read(client *kgo.Client, topic *string, wg *sync.WaitGroup) {
 	}
 }
 
+// Register the schema for the Nasdaq Historical type in Redpanda Schema Registry.
+func registerSchema(schemaText string, schemaType sr.SchemaType) sr.SubjectSchema {
+	src, err := sr.NewClient(sr.URLs(*registry))
+	if err != nil {
+		log.Fatalf("Unable to create Schema Registry client: %v", err)
+	}
+	ss, err := src.CreateSchema(context.Background(), *topic+"-value", sr.Schema{
+		Schema: schemaText,
+		Type:   schemaType,
+	})
+	if err != nil {
+		log.Fatalf("Unable to create schema: %v", err)
+	}
+	log.Printf("Registered %s schema ID: %d", ss.Type, ss.ID)
+	return ss
+}
+
 func main() {
-	dir := flag.String("dir", "../data", "directory containing .csv files")
-	brokers := flag.String("brokers", "localhost:19092", "Kafka API bootstrap servers")
-	topic := flag.String("topic", "nasdaq_historical", "Produce events to this topic")
-	delay := flag.Int("delay", 100, "Milliseconds delay in between producing events")
 	flag.Parse()
+
+	var t sr.SchemaType
+	t.UnmarshalText([]byte(*encoding))
+	log.Printf("Encoding: %v", t)
+
+	// Set default schema type to JSON
+	schema.Type = sr.TypeJSON
+	if t == sr.TypeAvro {
+		// Read Avro schema from file
+		avroText, err := os.ReadFile(*dir + "/stock.avsc")
+		if err != nil {
+			log.Fatalf("Unable to read Avro schema file: %v", err)
+		}
+		schema = registerSchema(string(avroText), sr.TypeAvro)
+
+		// Setup serializer and deserializer
+		avroSchema, err := avro.Parse(string(avroText))
+		if err != nil {
+			log.Fatalf("Unable to parse Avro schema: %v", err)
+		}
+		serde.Register(
+			schema.ID,
+			NasdaqHistorical{},
+			sr.EncodeFn(func(v any) ([]byte, error) {
+				return avro.Marshal(avroSchema, v)
+			}),
+			sr.DecodeFn(func(b []byte, v any) error {
+				return avro.Unmarshal(avroSchema, b, v)
+			}),
+		)
+	}
 
 	opts := []kgo.Opt{}
 	opts = append(opts,
@@ -139,7 +218,7 @@ func main() {
 	defer admin.Close()
 	createTopic(admin, *topic)
 
-	files, err := ioutil.ReadDir(*dir)
+	files, err := os.ReadDir(*dir)
 	if err != nil {
 		log.Fatalf("Unable to read directory: %s", *dir)
 	}
@@ -149,10 +228,10 @@ func main() {
 		if !f.IsDir() && strings.HasSuffix(f.Name(), ".csv") {
 			wg.Add(1)
 			csv := filepath.Join(*dir, f.Name())
-			go write(client, topic, delay, &csv, &wg)
+			go write(client, &csv, &wg)
 		}
 		wg.Add(1)
-		go read(client, topic, &wg)
+		go read(client, &wg)
 	}
 	wg.Wait()
 	log.Printf("Done!")
