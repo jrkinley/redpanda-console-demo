@@ -5,11 +5,12 @@ import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.List;
 import java.util.Optional;
 import java.util.Properties;
-
 import org.apache.commons.cli.CommandLine;
 import org.apache.commons.cli.CommandLineParser;
 import org.apache.commons.cli.DefaultParser;
@@ -33,7 +34,19 @@ import nasdaq.historical.v1.Stock.NasdaqHistorical;
 import io.confluent.kafka.serializers.protobuf.KafkaProtobufDeserializer;
 import io.confluent.kafka.serializers.protobuf.KafkaProtobufSerializer;
 
+/*
+ * Compile .proto to generate classes:
+ * protoc -I=src/main/java/ --java_out=src/main/java/ ../data/stock.proto
+ */
+
 public class ProtobufExample {
+    private static String[] INPUT_FILES = {
+        "HistoricalData_COKE_5Y.csv",
+        "HistoricalData_GOOGL_5Y.csv",
+        "HistoricalData_NVDA_5Y.csv",
+        "HistoricalData_SPX_5Y.csv"
+    };
+
     private static String getSymbol(String filename) {
         String[] parts = filename.split("_");
         if (parts.length == 3) {
@@ -43,9 +56,53 @@ public class ProtobufExample {
         }
     }
 
+    private static void write(String filename, String topic, Properties props) {
+        final KafkaProducer<String, NasdaqHistorical> producer = new KafkaProducer<String, NasdaqHistorical>(props);
+        String symbol = getSymbol(filename);
+        try {
+            InputStream is = ProtobufExample.class.getClassLoader().getResourceAsStream(filename);
+            InputStreamReader sr = new InputStreamReader(is, StandardCharsets.UTF_8);
+            BufferedReader reader = new BufferedReader(sr);
+            reader.readLine(); // Ignore header
+            String line = reader.readLine();
+            while (line != null) {
+                String[] parts = line.split(",");
+                NasdaqHistorical stock = NasdaqHistorical.newBuilder()
+                                                        .setDate(parts[0])
+                                                        .setLast(parts[1])
+                                                        .setVolume(Float.parseFloat(parts[2]))
+                                                        .setOpen(parts[3])
+                                                        .setHigh(parts[4])
+                                                        .setLow(parts[5])
+                                                        .build();
+                ProducerRecord<String, NasdaqHistorical> record = new ProducerRecord<String, NasdaqHistorical>(
+                    topic, symbol, stock
+                );
+                producer.send(record, new Callback() {
+                    @Override
+                    public void onCompletion(RecordMetadata metadata, Exception exception) {
+                        if (exception != null) {
+                            exception.printStackTrace();
+                        } else {
+                            System.out.printf("Produced: [Topic: %s \tPartition: %d \tOffset: %d \tKey: %s]%n",
+                                metadata.topic(), metadata.partition(), metadata.offset(), record.key());
+                        }
+                    }
+                });
+                Thread.sleep(100);
+                line = reader.readLine();
+            }
+            reader.close();
+        } catch (Exception e) {
+            e.printStackTrace();
+        } finally {
+            producer.flush();
+            producer.close();
+        }
+    }
+
     public static void main(String[] args) throws InterruptedException {
         Options options = new Options();
-        options.addOption(new Option("f", "file", true, "Path to .csv file containing Nasdaq historical data"));
         options.addOption(new Option("b", "brokers", true, "Kafka API bootstrap servers"));
         options.addOption(new Option("r", "registry", true, "Schema Registry address"));
         options.addOption(new Option("t", "topic", true, "Produce events to this topic"));
@@ -62,7 +119,6 @@ public class ProtobufExample {
         }
 
         final String topic = cmd.getOptionValue("topic", "nasdaq_historical_proto");
-        final String inputFile = cmd.getOptionValue("file", "HistoricalData_NVDA_5Y.csv");
 
         Properties props = new Properties();
         props.put("bootstrap.servers", cmd.getOptionValue("brokers", "localhost:9092"));
@@ -85,54 +141,6 @@ public class ProtobufExample {
             admin.close();
         }
 
-        Runnable write = () -> {
-            // Compile .proto to generate classes:
-            // protoc -I=src/main/java/ --java_out=src/main/java/ ../data/stock.proto
-            final KafkaProducer<String, NasdaqHistorical> producer = new KafkaProducer<String, NasdaqHistorical>(props);
-            String symbol = getSymbol(inputFile);
-
-            try {
-                InputStream is = ProtobufExample.class.getClassLoader().getResourceAsStream(inputFile);
-                InputStreamReader sr = new InputStreamReader(is, StandardCharsets.UTF_8);
-                BufferedReader reader = new BufferedReader(sr);
-                reader.readLine(); // Ignore header
-                String line = reader.readLine();
-                while (line != null) {
-                    String[] parts = line.split(",");
-                    NasdaqHistorical stock = NasdaqHistorical.newBuilder()
-                                                            .setDate(parts[0])
-                                                            .setLast(parts[1])
-                                                            .setVolume(Float.parseFloat(parts[2]))
-                                                            .setOpen(parts[3])
-                                                            .setHigh(parts[4])
-                                                            .setLow(parts[5])
-                                                            .build();
-                    ProducerRecord<String, NasdaqHistorical> record = new ProducerRecord<String, NasdaqHistorical>(
-                        topic, symbol, stock
-                    );
-                    producer.send(record, new Callback() {
-                        @Override
-                        public void onCompletion(RecordMetadata metadata, Exception exception) {
-                            if (exception != null) {
-                                exception.printStackTrace();
-                            } else {
-                                System.out.printf("Produced: [Topic: %s \tPartition: %d \tOffset: %d]%n",
-                                    metadata.topic(), metadata.partition(), metadata.offset());
-                            }
-                        }
-                    });
-                    Thread.sleep(100);
-                    line = reader.readLine();
-                }
-                reader.close();
-            } catch (Exception e) {
-                e.printStackTrace();
-            } finally {
-                producer.flush();
-                producer.close();
-            }
-        };
-
         Runnable read = () -> {
             final KafkaConsumer<String, NasdaqHistorical> consumer = new KafkaConsumer<String, NasdaqHistorical>(props);        
             consumer.subscribe(Arrays.asList(topic));
@@ -153,11 +161,18 @@ public class ProtobufExample {
             }
         };
 
-        Thread t1 = new Thread(write);
-        t1.start();
-        Thread t2 = new Thread(read);
-        t2.start();
-        t1.join();
-        t2.join();
+        List<Thread> producers = new ArrayList<>();
+        for (String file: INPUT_FILES) {
+            Thread t = new Thread(() -> write(file, topic, props));
+            producers.add(t);
+            t.start();
+        }
+
+        Thread consumer = new Thread(read);
+        consumer.start();
+        consumer.join();
+        for (Thread p: producers) {
+            p.join();
+        }
     }
 }
